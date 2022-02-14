@@ -214,7 +214,7 @@ class Processor:
 
     def handle_return(self, jump_instr):
         if len(self.context) == 0  or self.context[0][0] != 'function':
-            raise self.error('Cannot call !return outside of a function.')
+            raise self.error('Cannot call return outside of a function.')
         return (jump_instr or 'jmp') + ' .' + self.context[0][1] + '__return'
 
     def handle_break(self, name, jump_instr):
@@ -225,7 +225,7 @@ class Processor:
 
     def handle_loop_jump(self, type, jump_instr, name, label_suffix):
         if len(self.context) == 0 or self.context[-1][0] != 'loop':
-            raise self.error('Cannot call !%s outside of a loop.' % type)
+            raise self.error('Cannot call %s outside of a loop.' % type)
         if name == None:
             return [(jump_instr or 'jmp') + ' ' + self.current_loop_label + label_suffix]
         partial_context = []
