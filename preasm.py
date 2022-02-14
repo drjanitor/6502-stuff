@@ -11,46 +11,56 @@ def parse_args(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument('infile')
     parser.add_argument('-o', '--outfile')
+    parser.add_argument('-x', '--exclam')
     return parser.parse_args(argv[1:])
 
 
 def main(argv):
     args = parse_args(argv)
     infile = pathlib.Path(args.infile).resolve()
-    outfile = args.outfile or infile.parent.with_suffix('s')
-    processed = process(infile, outfile)
+    outfile = args.outfile or infile.with_suffix('.out.s')
+    processed = process(infile, outfile, make_patterns(args.exclam))
     with open(outfile, 'w') as f:
         f.write(processed)
 
 
-def process(infile, outfile):
-    processor = Processor(indent='    ')
+def process(infile, outfile, patterns):
+    processor = Processor(indent='    ', patterns=patterns)
     processor.process_file(infile)
     return '\n'.join(processor.out) + '\n'
 
 
 LEADING_WS = r'(?P<leading>\s*)'
-TRAILING_WS = r'(?P<trailing>\s*([#;].*)?)'
-
-def make_re(s):
-    return re.compile(LEADING_WS + s + TRAILING_WS, re.X | re.I)
+TRAILING_WS = r'(?P<trailing>\s*([;].*)?)'
 
 
-JUMP_INSTR = r'((?P<jump_instr> JMP|BCC|BCS|BEQ|BMI|BNE|BPL|BVC|BVS) \s+)? '
+def make_patterns(with_exclam):
+    def make_re(s):
+        s = s.replace('[KW] ', '!' if with_exclam else '')
+        return re.compile(LEADING_WS + s + TRAILING_WS, re.X | re.I)
 
+    JUMP_INSTR = r'((?P<jump_instr> JMP|BCC|BCS|BEQ|BMI|BNE|BPL|BVC|BVS) \s+)'
+    
+    class Patterns:
+        IMPORT = make_re(r' [KW] import \s+ "(?P<path>.+)" ')
+        FUNCTION = make_re(r' [KW] fn (\s* \[ (?P<flags>[a-z ]+) \] )? \s+ (?P<name>[a-z_]+) \s* \{')
+        MAKE_LABEL = make_re(r' [KW] label \s+ (?P<name>[a-z_]+) ')
+        JUMP_LABEL = make_re(JUMP_INSTR + r' [KW] label \s*\(\s* (?P<name>[a-z_]+) \s*\)\s*')
+        LOOP = make_re(r' [KW] (loop|(?P<skip>skip)) \s+ (?P<name>[a-z_]+) \s* \{ ')
+        END = make_re(r' \} ')
+        RETURN = make_re(JUMP_INSTR + r'? [KW] return (\s+ (?P<value>[^;]+) )')
+        NEXT = make_re(JUMP_INSTR + r'? [KW] next (\s+ (?P<name>[a-z_]+) )? ')
+        BREAK = make_re(JUMP_INSTR + r'? [KW] break (\s+ (?P<name>[a-z_]+) )? ')
 
-IMPORT = make_re(r' !import \s+ "(?P<path>.+)" ')
-FUNCTION = make_re(r' !function (\s* \[ (?P<flags>[a-z ]+) \] )? \s+ (?P<name>[a-z_]+)')
-LABEL = make_re(JUMP_INSTR + r' !label \s+ (?P<name>[a-z_]+) ')
-LOOP = make_re(r' !loop \s+ (?P<name>[a-z_]+) ')
-END = make_re(r' !end ')
-RETURN = make_re(JUMP_INSTR + r' !return ')
-NEXT = make_re(JUMP_INSTR + r' !next (\s+ (?P<name>[a-z_]+) )? ')
-BREAK = make_re(JUMP_INSTR + r' !break (\s+ (?P<name>[a-z_]+) )? ')
+    return Patterns
 
 
 class FunctionFlag(Enum):
     NOPUSH = 'nopush'
+
+
+class LoopFlag(Enum):
+    SKIP = 'skip'
 
 
 class CompilationError(Exception):
@@ -63,7 +73,7 @@ class CompilationError(Exception):
 
 class Processor:
 
-    def __init__(self, indent):
+    def __init__(self, indent, patterns):
         self.indent = indent
         self.files = set()
         self.current_file = None
@@ -71,15 +81,16 @@ class Processor:
         self.out = []
         self.context = []
         self.imported_files = set()
+        self.patterns = patterns
 
     def process_file(self, path):
         if path in self.imported_files:
-            self.out.append(';;;; Skipping already imported: %s' % path.name)
+            self.out.append(';---- Skipping: %s' % path.name)
             return
         first_file = len(self.imported_files) == 0
         self.imported_files.add(path)
         if not first_file:
-            self.out.append(';;;; Begin import: ' + str(path.name))
+            self.out.append(';---- Begin import: ' + str(path.name))
         with open(path, 'r') as f:
             for (lineno, line) in enumerate(f):
                 self.current_file = path
@@ -90,19 +101,21 @@ class Processor:
                 'File ends with unclosed contexts:\n' + '\n'.join(
                     '%s %s' % c for c in self.context))
         if not first_file:
-            self.out.append(';;;; End import: ' + str(path.name))
+            self.out.append(';---- End import: ' + str(path.name))
         
     def process_line(self, line):
         line = line.rstrip('\n')
+        p = self.patterns
         return self.handle_cases(line, [
-            (IMPORT, self.handle_import),
-            (FUNCTION, self.handle_function),
-            (LOOP, self.handle_loop),
-            (END, self.handle_end),
-            (RETURN, self.handle_return),
-            (NEXT, self.handle_next),
-            (BREAK, self.handle_break),
-            (LABEL, self.handle_label),
+            (p.IMPORT, self.handle_import),
+            (p.FUNCTION, self.handle_function),
+            (p.LOOP, self.handle_loop),
+            (p.END, self.handle_end),
+            (p.RETURN, self.handle_return),
+            (p.NEXT, self.handle_next),
+            (p.BREAK, self.handle_break),
+            (p.MAKE_LABEL, self.handle_label),
+            (p.JUMP_LABEL, self.handle_label),
         ])
 
     def handle_cases(self, line, cases):
@@ -128,7 +141,7 @@ class Processor:
                 if len(out) > 0:
                     out[0] = out[0] + trailing
                 elif trailing:
-                    out[0] = leading + trailing
+                    out.append(leading + trailing.lstrip())
                 return out
         return [line]
 
@@ -161,11 +174,15 @@ class Processor:
             '\t pha' if FunctionFlag.NOPUSH not in cflags else None,
         ]
 
-    def handle_loop(self, name):
-        self.context.append(('loop', name, set()))
+    def handle_loop(self, name, skip):
+        cflags = set()
+        if skip:
+            cflags.add(LoopFlag.SKIP)
+        self.context.append(('loop', name, cflags))
         label = self.current_loop_label
         return [
             Processor.define_label(label + '__loop_begin'),
+            ('\t jmp ' + label + '__loop_end' if skip else None)
         ]
 
     def handle_end(self):
@@ -185,10 +202,10 @@ class Processor:
                 '\t rts',
             ]
 
-    def handle_label(self, name, jump_instr):
+    def handle_label(self, name, jump_instr=None):
         prefix = ''
-        if len(self.context) > 0 and self.context[0][1] == 'function':
-            prefix = self.context[0][0] + '__'
+        if len(self.context) > 0 and self.context[0][0] == 'function':
+            prefix = '.' + self.context[0][1] + '__'
         label = prefix + name
         if jump_instr:
             return [jump_instr + ' ' + label]
