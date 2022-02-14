@@ -1,16 +1,19 @@
-import "example_lib.s"
+!import "example_lib.s"
 
-import "example_lib.s" ; Only imported once.
+!import "../6502-stuff/example_lib.s" ; Only imported once.
 
-fn [nopush] delay_ms {
+!fn [-sva svx svy] delay_ms {
     tax
-    loop outer {
+    !loop outer {
         ldy #20
-        loop inner {
+        !loop inner {
             dey
-            beq break
+            beq !break
         }
         dex
-        beq break
+        beq !label(yolo)
     }
+    !label yolo
 }
+
+!label yolo

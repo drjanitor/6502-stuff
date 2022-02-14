@@ -1,10 +1,10 @@
-fn bar {
-    loop baz {
+!fn bar {
+    !loop baz {
         lda #20
     }
-    skip bar {
+    !skip bar {
         lda #40
     }
-    label cookie
-    bne label(cookie)
+    !label cookie
+    bne !label(cookie)
 }

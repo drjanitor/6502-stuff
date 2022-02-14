@@ -11,7 +11,7 @@ def parse_args(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument('infile')
     parser.add_argument('-o', '--outfile')
-    parser.add_argument('-x', '--exclam')
+    parser.add_argument('-x', '--exclam', action=argparse.BooleanOptionalAction)
     return parser.parse_args(argv[1:])
 
 
@@ -36,27 +36,29 @@ TRAILING_WS = r'(?P<trailing>\s*([;].*)?)'
 
 def make_patterns(with_exclam):
     def make_re(s):
-        s = s.replace('[KW] ', '!' if with_exclam else '')
+        s = s.replace('EXCLAM ', '!' if with_exclam else '')
         return re.compile(LEADING_WS + s + TRAILING_WS, re.X | re.I)
 
     JUMP_INSTR = r'((?P<jump_instr> JMP|BCC|BCS|BEQ|BMI|BNE|BPL|BVC|BVS) \s+)'
     
     class Patterns:
-        IMPORT = make_re(r' [KW] import \s+ "(?P<path>.+)" ')
-        FUNCTION = make_re(r' [KW] fn (\s* \[ (?P<flags>[a-z ]+) \] )? \s+ (?P<name>[a-z_]+) \s* \{')
-        MAKE_LABEL = make_re(r' [KW] label \s+ (?P<name>[a-z_]+) ')
-        JUMP_LABEL = make_re(JUMP_INSTR + r' [KW] label \s*\(\s* (?P<name>[a-z_]+) \s*\)\s*')
-        LOOP = make_re(r' [KW] (loop|(?P<skip>skip)) \s+ (?P<name>[a-z_]+) \s* \{ ')
+        IMPORT = make_re(r' EXCLAM import \s+ "(?P<path>.+)" ')
+        FUNCTION = make_re(r' EXCLAM fn (\s* \[ (?P<flags>[ a-z_-]+) \] )? \s+ (?P<name>[a-z_]+) \s* \{')
+        MAKE_LABEL = make_re(r' EXCLAM label \s+ (?P<name>[a-z_]+) ')
+        JUMP_LABEL = make_re(JUMP_INSTR + r' EXCLAM label \s*\(\s* (?P<name>[a-z_]+) \s*\)\s*')
+        LOOP = make_re(r' EXCLAM (loop|(?P<skip>skip)) \s+ (?P<name>[a-z_]+) \s* \{ ')
         END = make_re(r' \} ')
-        RETURN = make_re(JUMP_INSTR + r'? [KW] return (\s+ (?P<value>[^;]+) )')
-        NEXT = make_re(JUMP_INSTR + r'? [KW] next (\s+ (?P<name>[a-z_]+) )? ')
-        BREAK = make_re(JUMP_INSTR + r'? [KW] break (\s+ (?P<name>[a-z_]+) )? ')
+        RETURN = make_re(JUMP_INSTR + r'? EXCLAM return (\s+ (?P<value>[^;]+) )')
+        NEXT = make_re(JUMP_INSTR + r'? EXCLAM next (\s+ (?P<name>[a-z_]+) )? ')
+        BREAK = make_re(JUMP_INSTR + r'? EXCLAM break (\s+ (?P<name>[a-z_]+) )? ')
 
     return Patterns
 
 
 class FunctionFlag(Enum):
-    NOPUSH = 'nopush'
+    NO_SAVE_A = '-sva'
+    SAVE_X = 'svx'
+    SAVE_Y = 'svy'
 
 
 class LoopFlag(Enum):
@@ -171,7 +173,9 @@ class Processor:
         self.context.append(('function', name, cflags))
         return [
             Processor.define_label(name),
-            '\t pha' if FunctionFlag.NOPUSH not in cflags else None,
+            '\t pha' if FunctionFlag.NO_SAVE_A not in cflags else None,
+            '\t .byte $DA  ; PHX' if FunctionFlag.SAVE_X in cflags else None,
+            '\t .byte $5A  ; PHY' if FunctionFlag.SAVE_Y in cflags else None,
         ]
 
     def handle_loop(self, name, skip):
@@ -198,7 +202,9 @@ class Processor:
         elif ctype == 'function':
             return [
                 Processor.define_label('.' + cname + '__return'),
-                '\t pla' if FunctionFlag.NOPUSH not in cflags else None,
+                '\t .byte $7A  ; PLY' if FunctionFlag.SAVE_Y in cflags else None,
+                '\t .byte $FA  ; PLX' if FunctionFlag.SAVE_X in cflags else None,
+                '\t pla' if FunctionFlag.NO_SAVE_A not in cflags else None,
                 '\t rts',
             ]
 
