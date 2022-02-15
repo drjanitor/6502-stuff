@@ -39,13 +39,13 @@ def make_patterns(with_exclam):
         s = s.replace('EXCLAM ', '!' if with_exclam else '')
         return re.compile(LEADING_WS + s + TRAILING_WS, re.X | re.I)
 
-    JUMP_INSTR = r'((?P<jump_instr> JMP|BCC|BCS|BEQ|BMI|BNE|BPL|BVC|BVS) \s+)'
+    JUMP_INSTR = r'((?P<jump_instr> [a-z]{3}) \s+)'
     
     class Patterns:
         IMPORT = make_re(r' EXCLAM import \s+ "(?P<path>.+)" ')
         FUNCTION = make_re(r' EXCLAM fn (\s* \[ (?P<flags>[ a-z_-]+) \] )? \s+ (?P<name>[a-z_]+) \s* \{')
         MAKE_LABEL = make_re(r' EXCLAM label \s+ (?P<name>[a-z_]+) ')
-        JUMP_LABEL = make_re(JUMP_INSTR + r' EXCLAM label \s*\(\s* (?P<name>[a-z_]+) \s*\)\s*')
+        JUMP_LABEL = make_re(JUMP_INSTR + r' EXCLAM label \s+ (?P<name>[a-z_]+)')
         LOOP = make_re(r' EXCLAM (loop|(?P<skip>skip)) \s+ (?P<name>[a-z_]+) \s* \{ ')
         END = make_re(r' \} ')
         RETURN = make_re(JUMP_INSTR + r'? EXCLAM return (\s+ (?P<value>[^;]+) )')
@@ -57,8 +57,8 @@ def make_patterns(with_exclam):
 
 class FunctionFlag(Enum):
     NO_SAVE_A = '-sva'
-    SAVE_X = 'svx'
-    SAVE_Y = 'svy'
+    NO_SAVE_X = '-svx'
+    NO_SAVE_Y = '-svy'
 
 
 class LoopFlag(Enum):
@@ -174,8 +174,8 @@ class Processor:
         return [
             Processor.define_label(name),
             '\t pha' if FunctionFlag.NO_SAVE_A not in cflags else None,
-            '\t .byte $DA  ; PHX' if FunctionFlag.SAVE_X in cflags else None,
-            '\t .byte $5A  ; PHY' if FunctionFlag.SAVE_Y in cflags else None,
+            '\t phx' if FunctionFlag.NO_SAVE_X not in cflags else None,
+            '\t phy' if FunctionFlag.NO_SAVE_Y not in cflags else None,
         ]
 
     def handle_loop(self, name, skip):
@@ -202,8 +202,8 @@ class Processor:
         elif ctype == 'function':
             return [
                 Processor.define_label('.' + cname + '__return'),
-                '\t .byte $7A  ; PLY' if FunctionFlag.SAVE_Y in cflags else None,
-                '\t .byte $FA  ; PLX' if FunctionFlag.SAVE_X in cflags else None,
+                '\t ply' if FunctionFlag.NO_SAVE_Y not in cflags else None,
+                '\t plx' if FunctionFlag.NO_SAVE_X not in cflags else None,
                 '\t pla' if FunctionFlag.NO_SAVE_A not in cflags else None,
                 '\t rts',
             ]

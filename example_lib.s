@@ -6,5 +6,5 @@
         lda #40
     }
     !label cookie
-    bne !label(cookie)
+    bne !label cookie
 }
