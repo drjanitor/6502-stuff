@@ -56,9 +56,9 @@ def make_patterns(with_exclam):
 
 
 class FunctionFlag(Enum):
-    NO_SAVE_A = '-sva'
-    NO_SAVE_X = '-svx'
-    NO_SAVE_Y = '-svy'
+    SAVE_A = 'sva'
+    SAVE_X = 'svx'
+    SAVE_Y = 'svy'
 
 
 class LoopFlag(Enum):
@@ -173,9 +173,9 @@ class Processor:
         self.context.append(('function', name, cflags))
         return [
             Processor.define_label(name),
-            '\t pha' if FunctionFlag.NO_SAVE_A not in cflags else None,
-            '\t phx' if FunctionFlag.NO_SAVE_X not in cflags else None,
-            '\t phy' if FunctionFlag.NO_SAVE_Y not in cflags else None,
+            '\t pha' if FunctionFlag.SAVE_A in cflags else None,
+            '\t phx' if FunctionFlag.SAVE_X in cflags else None,
+            '\t phy' if FunctionFlag.SAVE_Y in cflags else None,
         ]
 
     def handle_loop(self, name, skip):
@@ -202,9 +202,9 @@ class Processor:
         elif ctype == 'function':
             return [
                 Processor.define_label('.' + cname + '__return'),
-                '\t ply' if FunctionFlag.NO_SAVE_Y not in cflags else None,
-                '\t plx' if FunctionFlag.NO_SAVE_X not in cflags else None,
-                '\t pla' if FunctionFlag.NO_SAVE_A not in cflags else None,
+                '\t ply' if FunctionFlag.SAVE_Y in cflags else None,
+                '\t plx' if FunctionFlag.SAVE_X in cflags else None,
+                '\t pla' if FunctionFlag.SAVE_A in cflags else None,
                 '\t rts',
             ]
 
